@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/p2p/discover"
+	"github.com/ethereum/go-ethereum/p2p/enode"
 )
 
 const ua = "manspreading"
@@ -40,7 +40,7 @@ type conn struct {
 
 type proxy struct {
 	lock           sync.RWMutex
-	upstreamNode   *discover.Node
+	upstreamNode   *enode.Node
 	upstreamConn   *conn
 	downstreamConn *conn
 	upstreamState  statusData
@@ -68,34 +68,37 @@ func main() {
 		fmt.Println("Node Key generated and saved to ./nodekey")
 	}
 
-	node, _ := discover.ParseNode(*upstreamUrl)
+	node, err := enode.Parse(enode.ValidSchemes, *upstreamUrl)
+	if err != nil {
+		panic(err)
+	}
+
 	pxy = &proxy{
 		upstreamNode: node,
 	}
 
 	config := p2p.Config{
 		PrivateKey:     nodekey,
-		MaxPeers:       2,
-		NoDiscovery:    true,
-		DiscoveryV5:    false,
-		Name:           common.MakeName(fmt.Sprintf("%s/%s", ua, node.ID.String()), ver),
-		BootstrapNodes: []*discover.Node{node},
-		StaticNodes:    []*discover.Node{node},
-		TrustedNodes:   []*discover.Node{node},
+		MaxPeers:       20,
+		NoDiscovery:    false,
+		DiscoveryV5:    true,
+		BootstrapNodes: []*enode.Node{node},
+		StaticNodes:    []*enode.Node{node},
+		TrustedNodes:   []*enode.Node{node},
 
 		Protocols: []p2p.Protocol{newManspreadingProtocol()},
 
 		ListenAddr: *listenAddr,
 		Logger:     log.New(),
 	}
-	config.Logger.SetHandler(log.StdoutHandler)
+	// config.Logger.SetHandler(log.StdoutHandler)
 
 	pxy.srv = &p2p.Server{Config: config}
 
 	// Wait forever
 	var wg sync.WaitGroup
 	wg.Add(2)
-	err := pxy.srv.Start()
+	err = pxy.srv.Start()
 	wg.Done()
 	if err != nil {
 		fmt.Println(err)

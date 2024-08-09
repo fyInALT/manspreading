@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ethereum/go-ethereum/eth"
+	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/p2p/discover"
+	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -14,13 +14,13 @@ func newManspreadingProtocol() p2p.Protocol {
 	return p2p.Protocol{
 		Name:    eth.ProtocolName,
 		Version: eth.ProtocolVersions[0],
-		Length:  eth.ProtocolLengths[0],
-		Run:     handle,
+		//Length:  eth.ProtocolLengths[0],
+		Run: handle,
 		NodeInfo: func() interface{} {
 			fmt.Println("Noop: NodeInfo called")
 			return nil
 		},
-		PeerInfo: func(id discover.NodeID) interface{} {
+		PeerInfo: func(id enode.ID) interface{} {
 			fmt.Println("Noop: PeerInfo called")
 			return nil
 		},
@@ -40,7 +40,7 @@ func handle(p *p2p.Peer, rw p2p.MsgReadWriter) error {
 			if err == io.EOF {
 				fmt.Println(fromWhom(p.ID().String()), " has dropped its connection...")
 				pxy.lock.Lock()
-				if p.ID() == pxy.upstreamNode.ID {
+				if p.ID() == pxy.upstreamNode.ID() {
 					pxy.upstreamConn = nil
 				} else {
 					pxy.downstreamConn = nil
@@ -67,7 +67,7 @@ func handle(p *p2p.Peer, rw p2p.MsgReadWriter) error {
 			fmt.Println("GenesisBlock:    ", myMessage.GenesisBlock.Hex())
 
 			pxy.lock.Lock()
-			if p.ID() == pxy.upstreamNode.ID {
+			if p.ID() == pxy.upstreamNode.ID() {
 				pxy.upstreamState = myMessage
 				pxy.upstreamConn = &conn{p, rw}
 			} else {
@@ -95,7 +95,7 @@ func handle(p *p2p.Peer, rw p2p.MsgReadWriter) error {
 			}
 
 			pxy.lock.Lock()
-			if p.ID() == pxy.upstreamNode.ID {
+			if p.ID() == pxy.upstreamNode.ID() {
 				pxy.upstreamState.CurrentBlock = myMessage.Block.Hash()
 				pxy.upstreamState.TD = myMessage.TD
 			} //TODO: handle newBlock from downstream
@@ -119,9 +119,9 @@ func relay(p *p2p.Peer, msg p2p.Msg) {
 	var err error
 	pxy.lock.RLock()
 	defer pxy.lock.RUnlock()
-	if p.ID() != pxy.upstreamNode.ID && pxy.upstreamConn != nil {
+	if p.ID() != pxy.upstreamNode.ID() && pxy.upstreamConn != nil {
 		err = pxy.upstreamConn.rw.WriteMsg(msg)
-	} else if p.ID() == pxy.upstreamNode.ID && pxy.downstreamConn != nil {
+	} else if p.ID() == pxy.upstreamNode.ID() && pxy.downstreamConn != nil {
 		err = pxy.downstreamConn.rw.WriteMsg(msg)
 	} else {
 		fmt.Println("One of upstream/downstream isn't alive: ", pxy.srv.Peers())
@@ -134,7 +134,7 @@ func relay(p *p2p.Peer, msg p2p.Msg) {
 
 func (pxy *proxy) upstreamAlive() bool {
 	for _, peer := range pxy.srv.Peers() {
-		if peer.ID() == pxy.upstreamNode.ID {
+		if peer.ID() == pxy.upstreamNode.ID() {
 			return true
 		}
 	}
@@ -142,7 +142,7 @@ func (pxy *proxy) upstreamAlive() bool {
 }
 
 func fromWhom(nodeId string) string {
-	if nodeId == pxy.upstreamNode.ID.String() {
+	if nodeId == pxy.upstreamNode.ID().String() {
 		return "upstream"
 	} else {
 		return "downstream"
